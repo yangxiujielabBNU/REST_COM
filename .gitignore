@@ -1,0 +1,12 @@
+# Ignore folders starting with refer_
+refer_*/
+
+# Windows reserved names
+nul
+
+# Large data files
+*.eeg
+*.fif
+*.pkl
+*.rar
+__MACOSX/

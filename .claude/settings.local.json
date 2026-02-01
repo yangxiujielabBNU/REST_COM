@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c:*)",
+      "Bash(cat:*)",
+      "Bash(d:ProgramDataanaconda3envsmne12_ADHDprojectpython.exe -c \"import sys; print\\(f''Python: {sys.version}''\\)\")",
+      "Bash(d:ProgramDataanaconda3envsmne12_ADHDprojectpython.exe -c \"import pydantic; print\\(f''pydantic: {pydantic.__version__}''\\)\")",
+      "Bash(d:ProgramDataanaconda3envsmne12_ADHDprojectpython.exe -c \"import typing_extensions; print\\(f''typing_extensions: {typing_extensions.__version__}''\\)\")",
+      "Bash(python:*)",
+      "Bash(grep:*)",
+      "Bash(git init:*)",
+      "Bash(gh auth status:*)",
+      "Bash(where:*)",
+      "Bash(git remote:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git branch -M main)",
+      "Bash(git push -u origin main)"
+    ]
+  }
+}

@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>完整变量血缘图</title>
+    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 20px; background: #f8f9fa; }
+        h1 { color: #333; margin-bottom: 10px; }
+        .container { max-width: 1400px; margin: 0 auto; }
+        .toolbar { display: flex; gap: 15px; margin-bottom: 15px; align-items: center; flex-wrap: wrap; }
+        .search-box { display: flex; gap: 8px; align-items: center; }
+        .search-box input { padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; width: 200px; }
+        .search-box input:focus { outline: none; border-color: #4A90D9; box-shadow: 0 0 0 2px rgba(74,144,217,0.2); }
+        .search-box button { padding: 8px 16px; background: #4A90D9; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; }
+        .search-box button:hover { background: #3a7bc8; }
+        .search-box button.reset { background: #6c757d; }
+        .search-box button.reset:hover { background: #5a6268; }
+        .search-results { font-size: 13px; color: #666; padding: 5px 10px; background: #e9ecef; border-radius: 4px; display: none; }
+        #network { width: 100%; height: 700px; border: 1px solid #ddd; border-radius: 8px; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .info { margin-top: 15px; padding: 15px; background: #fff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .legend { display: flex; gap: 20px; margin-top: 10px; flex-wrap: wrap; }
+        .legend-item { display: flex; align-items: center; gap: 8px; }
+        .legend-color { width: 20px; height: 20px; border-radius: 4px; }
+        .target { background: #FF4444; }
+        .related { background: #4A90D9; }
+        .unrelated { background: #E0E0E0; opacity: 0.5; }
+        .found { background: #28a745; }
+        .stats { display: flex; gap: 30px; margin-bottom: 10px; }
+        .stat { padding: 8px 15px; background: #e9ecef; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>完整变量血缘图</h1>
+        <div class="toolbar">
+            <div class="search-box">
+                <input type="text" id="searchInput" placeholder="搜索变量名..." onkeypress="if(event.key==='Enter') searchNode()">
+                <button onclick="searchNode()">搜索</button>
+                <button class="reset" onclick="resetSearch()">重置</button>
+            </div>
+            <div class="search-results" id="searchResults"></div>
+        </div>
+        <div id="network"></div>
+        <div class="info">
+            <div class="stats">
+                <div class="stat"><strong>总节点数:</strong> 70</div>
+                <div class="stat"><strong>相关节点:</strong> <span id="relatedCount">70</span></div>
+                <div class="stat"><strong>总边数:</strong> 96</div>
+            </div>
+            <div class="legend">
+                <div class="legend-item"><div class="legend-color target"></div><span>目标变量</span></div>
+                <div class="legend-item"><div class="legend-color related"></div><span>相关变量（血缘链）</span></div>
+                <div class="legend-item"><div class="legend-color unrelated"></div><span>不相关变量</span></div>
+                <div class="legend-item"><div class="legend-color found"></div><span>搜索结果</span></div>
+            </div>
+            <p style="margin-top: 10px; color: #666;"><strong>提示:</strong> 拖拽节点可调整布局，滚轮缩放，点击节点可查看详情</p>
+        </div>
+    </div>
+    <script>
+        var nodes = new vis.DataSet([{id: 0, label: "averaging_kernel\n(Cell 5)", level: 5, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 1, label: "axes\n(Cell 14)", level: 14, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 2, label: "band_data\n(Cell 16)", level: 16, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 3, label: "band_mean\n(Cell 16)", level: 16, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 4, label: "band_name\n(Cell 16)", level: 16, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 5, label: "band_power\n(Cell 8)", level: 8, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 6, label: "band_powers\n(Cell 8)", level: 8, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 7, label: "band_powers_group\n(Cell 10)", level: 10, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 8, label: "band_powers_group_std\n(Cell 10)", level: 10, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 9, label: "band_std\n(Cell 16)", level: 16, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 10, label: "bands\n(Cell 7)", level: 7, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 11, label: "bp\n(Cell ?)", level: 999, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 12, label: "compute_psds_group\n(Cell 10)", level: 10, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 13, label: "data_path\n(Cell 4)", level: 4, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 14, label: "edge_width\n(Cell 5)", level: 5, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 15, label: "epochs\n(Cell 8)", level: 8, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 16, label: "f\n(Cell 18)", level: 18, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 17, label: "failed_list\n(Cell 7)", level: 7, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 18, label: "fmax\n(Cell 8)", level: 8, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 19, label: "fmax_band\n(Cell ?)", level: 999, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 20, label: "fmin\n(Cell 8)", level: 8, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 21, label: "fmin_band\n(Cell ?)", level: 999, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 22, label: "fname\n(Cell 8)", level: 8, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 23, label: "freq_idx\n(Cell 8)", level: 8, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 24, label: "freq_range\n(Cell 8)", level: 8, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 25, label: "freqs\n(Cell 8)", level: 8, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 26, label: "freqs_snr\n(Cell 10)", level: 10, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 27, label: "group_results\n(Cell 18)", level: 18, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 28, label: "idx\n(Cell 14)", level: 14, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 29, label: "im\n(Cell 14)", level: 14, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 30, label: "k\n(Cell ?)", level: 999, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 31, label: "list_band_powers\n(Cell 7)", level: 7, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 32, label: "list_psds\n(Cell 7)", level: 7, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 33, label: "list_relative_powers\n(Cell 7)", level: 7, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 34, label: "list_snrs_mean\n(Cell 7)", level: 7, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 35, label: "mean_noise\n(Cell 5)", level: 5, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 36, label: "n_fft\n(Cell 8)", level: 8, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 37, label: "n_times\n(Cell 8)", level: 8, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 38, label: "noise_n_neighbor_freqs\n(Cell ?)", level: 999, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 39, label: "noise_skip_neighbor_freqs\n(Cell ?)", level: 999, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 40, label: "pad_width\n(Cell 5)", level: 5, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 41, label: "psd\n(Cell 8)", level: 8, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 42, label: "psd_mean\n(Cell 12)", level: 12, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 43, label: "psd_std\n(Cell 12)", level: 12, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 44, label: "psds\n(Cell 8)", level: 8, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 45, label: "psds_all\n(Cell 8)", level: 8, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 46, label: "psds_array\n(Cell 10)", level: 10, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 47, label: "psds_group\n(Cell 10)", level: 10, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 48, label: "psds_group_std\n(Cell 10)", level: 10, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 49, label: "rel_data\n(Cell 10)", level: 10, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 50, label: "relative_powers\n(Cell 8)", level: 8, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 51, label: "relative_powers_group\n(Cell 10)", level: 10, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 52, label: "result_file\n(Cell 18)", level: 18, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 53, label: "rp\n(Cell ?)", level: 999, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 54, label: "sfreq\n(Cell 8)", level: 8, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 55, label: "sid\n(Cell ?)", level: 999, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 56, label: "snr_group_mean\n(Cell 10)", level: 10, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 57, label: "snr_group_std\n(Cell 10)", level: 10, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 58, label: "snr_mean\n(Cell 8)", level: 8, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 59, label: "snr_spectrum\n(Cell 5)", level: 5, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 60, label: "snrs\n(Cell 8)", level: 8, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 61, label: "stats_data\n(Cell 16)", level: 16, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 62, label: "stats_df\n(Cell 16)", level: 16, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 63, label: "sub_id\n(Cell 8)", level: 8, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 64, label: "sub_ids\n(Cell 4)", level: 4, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 65, label: "success_count\n(Cell 8)", level: 8, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 66, label: "tmax\n(Cell 8)", level: 8, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 67, label: "tmin\n(Cell 8)", level: 8, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 68, label: "total_power\n(Cell 8)", level: 8, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}, {id: 69, label: "v\n(Cell ?)", level: 999, color: {"background": "#4A90D9", "border": "#2E6DB4"}, font: {"size": 12, "color": "#FFFFFF"}, opacity: 1.0}]);
+        var edges = new vis.DataSet([{from: 59, to: 60, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 4, to: 2, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 15, to: 54, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 11, to: 2, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 40, to: 35, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 22, to: 15, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 13, to: 22, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 44, to: 5, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 47, to: 42, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 28, to: 29, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 18, to: 41, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 4, to: 49, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 48, to: 27, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 51, to: 51, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 68, to: 50, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 8, to: 27, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 7, to: 28, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 20, to: 41, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 67, to: 41, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 53, to: 49, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 26, to: 27, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 25, to: 23, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 62, to: 27, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 14, to: 40, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 32, to: 48, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 15, to: 29, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 37, to: 36, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 45, to: 44, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 66, to: 41, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 46, to: 47, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 64, to: 27, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 41, to: 45, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 41, to: 25, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 18, to: 24, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 38, to: 14, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 49, to: 51, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 25, to: 27, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 10, to: 27, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 15, to: 37, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 5, to: 6, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 47, to: 27, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 24, to: 26, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 30, to: 50, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 23, to: 5, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 46, to: 48, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 32, to: 46, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 1, to: 1, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 2, to: 3, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 0, to: 0, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 17, to: 27, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 5, to: 29, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 8, to: 8, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 33, to: 49, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 7, to: 27, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 12, to: 47, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 2, to: 7, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 38, to: 0, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 1, to: 29, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 6, to: 6, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 6, to: 68, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 51, to: 27, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 12, to: 48, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 64, to: 63, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 55, to: 27, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 39, to: 14, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 44, to: 60, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 48, to: 43, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 52, to: 16, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 65, to: 27, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 24, to: 58, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 2, to: 9, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 15, to: 41, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 69, to: 50, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 32, to: 47, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 34, to: 57, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 2, to: 8, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 60, to: 58, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 36, to: 41, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 10, to: 4, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 25, to: 24, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 65, to: 65, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 57, to: 27, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 35, to: 40, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 21, to: 23, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 7, to: 7, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 19, to: 23, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 61, to: 62, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 56, to: 27, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 63, to: 22, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 35, to: 35, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 39, to: 0, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 41, to: 35, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 6, to: 50, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 25, to: 26, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 31, to: 2, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}, {from: 34, to: 56, arrows: "to", color: {"color": "#4A90D9", "opacity": 1.0}, width: 2}]);
+        var container = document.getElementById('network');
+        var data = { nodes: nodes, edges: edges };
+        var options = {
+            layout: {
+                improvedLayout: false,
+                hierarchical: false
+            },
+            physics: {
+                enabled: true,
+                solver: 'forceAtlas2Based',
+                forceAtlas2Based: {
+                    gravitationalConstant: -30,
+                    centralGravity: 0.005,
+                    springLength: 150,
+                    springConstant: 0.05,
+                    damping: 0.9
+                },
+                stabilization: {
+                    enabled: true,
+                    iterations: 150,
+                    updateInterval: 25,
+                    fit: true
+                },
+                maxVelocity: 50,
+                minVelocity: 0.75
+            },
+            nodes: {
+                shape: "box",
+                borderWidth: 1,
+                shadow: false,
+                margin: 6,
+                font: { size: 10 }
+            },
+            edges: {
+                smooth: false,
+                shadow: false,
+                width: 1,
+                arrows: { to: { scaleFactor: 0.5 } }
+            },
+            interaction: {
+                hover: true,
+                tooltipDelay: 300,
+                dragNodes: true,
+                dragView: true,
+                zoomView: true,
+                hideEdgesOnDrag: true,
+                hideEdgesOnZoom: true
+            }
+        };
+        var network = new vis.Network(container, data, options);
+
+        // 稳定后停止物理模拟，提高交互性能
+        network.once('stabilized', function() {
+            network.setOptions({ physics: { enabled: false } });
+        });
+
+        // 保存原始节点样式用于重置
+        var originalNodes = {};
+        nodes.forEach(function(node) {
+            originalNodes[node.id] = {
+                color: node.color,
+                font: node.font,
+                opacity: node.opacity
+            };
+        });
+
+        // 变量依赖关系数据（用于动态计算血缘链）
+        var dependencies = {"sub_ids": [], "data_path": [], "save_path": [], "fig_path": [], "averaging_kernel": ["noise_skip_neighbor_freqs", "averaging_kernel", "noise_n_neighbor_freqs"], "mean_noise": ["psd", "mean_noise", "pad_width"], "edge_width": ["noise_n_neighbor_freqs", "noise_skip_neighbor_freqs"], "pad_width": ["mean_noise", "edge_width"], "list_psds": [], "list_snrs_mean": [], "list_band_powers": [], "list_relative_powers": [], "bands": [], "freqs": ["psd"], "freq_range": ["freqs", "fmax"], "success_count": ["success_count"], "failed_list": [], "sub_id": ["sub_ids"], "fname": ["data_path", "sub_id"], "epochs": ["fname"], "tmin": [], "tmax": [], "fmin": [], "fmax": [], "n_times": ["epochs"], "sfreq": ["epochs"], "n_fft": ["n_times"], "psd": ["fmin", "tmin", "n_fft", "epochs", "fmax", "tmax"], "psds_all": ["psd"], "psds": ["psds_all"], "snrs": ["psds", "snr_spectrum"], "snr_mean": ["freq_range", "snrs"], "band_powers": ["band_powers", "band_power"], "band_name": ["bands"], "freq_idx": ["fmax_band", "fmin_band", "freqs"], "band_power": ["psds", "freq_idx"], "total_power": ["band_powers"], "relative_powers": ["band_powers", "k", "v", "total_power"], "psds_array": ["list_psds"], "psds_group": ["compute_psds_group", "psds_array", "list_psds"], "psds_group_std": ["compute_psds_group", "psds_array", "list_psds"], "snr_group_mean": ["list_snrs_mean"], "snr_group_std": ["list_snrs_mean"], "freqs_snr": ["freq_range", "freqs"], "band_powers_group": ["band_data", "band_powers_group"], "band_powers_group_std": ["band_data", "band_powers_group_std"], "band_data": ["bp", "band_name", "list_band_powers"], "relative_powers_group": ["rel_data", "relative_powers_group"], "rel_data": ["rp", "band_name", "list_relative_powers"], "fig": [], "ax": [], "psd_mean": ["psds_group"], "psd_std": ["psds_group_std"], "axes": ["axes"], "idx": ["band_powers_group"], "im": ["idx", "epochs", "axes", "band_power"], "stats_data": [], "band_mean": ["band_data"], "band_std": ["band_data"], "stats_df": ["stats_data"], "group_results": ["psds_group", "freqs_snr", "sub_ids", "freqs", "success_count", "snr_group_mean", "stats_df", "relative_powers_group", "sid", "failed_list", "band_powers_group", "psds_group_std", "bands", "band_powers_group_std", "snr_group_std"], "result_file": [], "f": ["result_file"]};
+        var nodeNameToId = {"averaging_kernel": 0, "axes": 1, "band_data": 2, "band_mean": 3, "band_name": 4, "band_power": 5, "band_powers": 6, "band_powers_group": 7, "band_powers_group_std": 8, "band_std": 9, "bands": 10, "bp": 11, "compute_psds_group": 12, "data_path": 13, "edge_width": 14, "epochs": 15, "f": 16, "failed_list": 17, "fmax": 18, "fmax_band": 19, "fmin": 20, "fmin_band": 21, "fname": 22, "freq_idx": 23, "freq_range": 24, "freqs": 25, "freqs_snr": 26, "group_results": 27, "idx": 28, "im": 29, "k": 30, "list_band_powers": 31, "list_psds": 32, "list_relative_powers": 33, "list_snrs_mean": 34, "mean_noise": 35, "n_fft": 36, "n_times": 37, "noise_n_neighbor_freqs": 38, "noise_skip_neighbor_freqs": 39, "pad_width": 40, "psd": 41, "psd_mean": 42, "psd_std": 43, "psds": 44, "psds_all": 45, "psds_array": 46, "psds_group": 47, "psds_group_std": 48, "rel_data": 49, "relative_powers": 50, "relative_powers_group": 51, "result_file": 52, "rp": 53, "sfreq": 54, "sid": 55, "snr_group_mean": 56, "snr_group_std": 57, "snr_mean": 58, "snr_spectrum": 59, "snrs": 60, "stats_data": 61, "stats_df": 62, "sub_id": 63, "sub_ids": 64, "success_count": 65, "tmax": 66, "tmin": 67, "total_power": 68, "v": 69};
+        var nodeIdToName = {"0": "averaging_kernel", "1": "axes", "2": "band_data", "3": "band_mean", "4": "band_name", "5": "band_power", "6": "band_powers", "7": "band_powers_group", "8": "band_powers_group_std", "9": "band_std", "10": "bands", "11": "bp", "12": "compute_psds_group", "13": "data_path", "14": "edge_width", "15": "epochs", "16": "f", "17": "failed_list", "18": "fmax", "19": "fmax_band", "20": "fmin", "21": "fmin_band", "22": "fname", "23": "freq_idx", "24": "freq_range", "25": "freqs", "26": "freqs_snr", "27": "group_results", "28": "idx", "29": "im", "30": "k", "31": "list_band_powers", "32": "list_psds", "33": "list_relative_powers", "34": "list_snrs_mean", "35": "mean_noise", "36": "n_fft", "37": "n_times", "38": "noise_n_neighbor_freqs", "39": "noise_skip_neighbor_freqs", "40": "pad_width", "41": "psd", "42": "psd_mean", "43": "psd_std", "44": "psds", "45": "psds_all", "46": "psds_array", "47": "psds_group", "48": "psds_group_std", "49": "rel_data", "50": "relative_powers", "51": "relative_powers_group", "52": "result_file", "53": "rp", "54": "sfreq", "55": "sid", "56": "snr_group_mean", "57": "snr_group_std", "58": "snr_mean", "59": "snr_spectrum", "60": "snrs", "61": "stats_data", "62": "stats_df", "63": "sub_id", "64": "sub_ids", "65": "success_count", "66": "tmax", "67": "tmin", "68": "total_power", "69": "v"};
+
+        // 追溯血缘链（限制层级深度）
+        function traceLineage(targetVar, maxDepth) {
+            maxDepth = maxDepth || 2;  // 默认只追溯2级上游
+            var lineage = new Set();
+            var toVisit = [{varName: targetVar, depth: 0}];
+            var visited = new Set();
+
+            while (toVisit.length > 0) {
+                var current = toVisit.pop();
+                var varName = current.varName;
+                var depth = current.depth;
+
+                if (visited.has(varName)) continue;
+                visited.add(varName);
+
+                if (depth < maxDepth && dependencies[varName]) {
+                    dependencies[varName].forEach(function(dep) {
+                        lineage.add(dep + '->' + varName);
+                        toVisit.push({varName: dep, depth: depth + 1});
+                    });
+                }
+            }
+            return lineage;
+        }
+
+        // 高亮目标变量及其上游来源（只显示来源，不显示去向）
+        function highlightLineage(targetVar) {
+            var lineage = traceLineage(targetVar);
+            var relatedNodes = new Set();
+
+            // 只收集上游来源节点（不包括目标变量本身，它单独处理）
+            lineage.forEach(function(edge) {
+                var parts = edge.split('->');
+                relatedNodes.add(parts[0]);  // 只添加来源节点
+            });
+
+            // 更新所有节点样式
+            nodes.forEach(function(node) {
+                var nodeName = nodeIdToName[node.id];
+                if (nodeName === targetVar) {
+                    // 目标变量：红色
+                    nodes.update({
+                        id: node.id,
+                        color: {"background": "#FF4444", "border": "#CC0000"},
+                        font: {"size": 14, "color": "#FFFFFF", "bold": true},
+                        opacity: 1.0
+                    });
+                } else if (relatedNodes.has(nodeName)) {
+                    // 上游来源变量：蓝色
+                    nodes.update({
+                        id: node.id,
+                        color: {"background": "#4A90D9", "border": "#2E6DB4"},
+                        font: {"size": 12, "color": "#FFFFFF"},
+                        opacity: 1.0
+                    });
+                } else {
+                    // 不相关变量：浅灰色半透明
+                    nodes.update({
+                        id: node.id,
+                        color: {"background": "#E0E0E0", "border": "#CCCCCC"},
+                        font: {"size": 10, "color": "#999999"},
+                        opacity: 0.3
+                    });
+                }
+            });
+
+            // 更新边的样式 - 只高亮上游来源的边
+            edges.forEach(function(edge) {
+                var fromName = nodeIdToName[edge.from];
+                var toName = nodeIdToName[edge.to];
+                var edgeKey = fromName + '->' + toName;
+
+                if (lineage.has(edgeKey)) {
+                    // 上游来源边：蓝色高亮
+                    edges.update({
+                        id: edge.id,
+                        color: {"color": "#4A90D9", "opacity": 1.0},
+                        width: 2,
+                        hidden: false
+                    });
+                } else {
+                    // 其他边：隐藏
+                    edges.update({
+                        id: edge.id,
+                        hidden: true
+                    });
+                }
+            });
+
+            // 更新标题
+            document.querySelector('h1').textContent = "变量 '" + targetVar + "' 的上游来源";
+            document.getElementById('relatedCount').textContent = relatedNodes.size + 1;
+        }
+
+        // 重置为初始状态
+        function resetToOriginal() {
+            Object.keys(originalNodes).forEach(function(id) {
+                nodes.update({
+                    id: parseInt(id),
+                    color: originalNodes[id].color,
+                    font: originalNodes[id].font,
+                    opacity: originalNodes[id].opacity
+                });
+            });
+
+            // 重置边（恢复显示）
+            edges.forEach(function(edge) {
+                edges.update({
+                    id: edge.id,
+                    color: {"color": "#4A90D9", "opacity": 1.0},
+                    width: 2,
+                    hidden: false
+                });
+            });
+
+            document.querySelector('h1').textContent = "完整变量血缘图";
+            document.getElementById('relatedCount').textContent = '70';
+            network.unselectAll();
+        }
+
+        // 搜索节点功能 - 只高亮匹配节点，不改变视图
+        function searchNode() {
+            var query = document.getElementById('searchInput').value.toLowerCase().trim();
+            if (!query) return;
+
+            // 先重置
+            resetToOriginal();
+
+            var foundNodes = [];
+            var allNodesList = nodes.get();
+
+            // 只高亮匹配的节点
+            allNodesList.forEach(function(node) {
+                var label = node.label.split('\n')[0].toLowerCase();
+                if (label.includes(query)) {
+                    foundNodes.push(node);
+                    // 高亮找到的节点：绿色
+                    nodes.update({
+                        id: node.id,
+                        color: {"background": "#28a745", "border": "#1e7e34"},
+                        font: {"size": 14, "color": "#FFFFFF", "bold": true},
+                        opacity: 1.0
+                    });
+                }
+            });
+
+            // 显示搜索结果
+            var resultsDiv = document.getElementById('searchResults');
+            if (foundNodes.length > 0) {
+                resultsDiv.style.display = 'block';
+                resultsDiv.innerHTML = '找到 <strong>' + foundNodes.length + '</strong> 个匹配: ' +
+                    foundNodes.map(n => n.label.split('\n')[0]).join(', ');
+                // 选中找到的节点（不缩放）
+                network.selectNodes(foundNodes.map(n => n.id));
+            } else {
+                resultsDiv.style.display = 'block';
+                resultsDiv.innerHTML = '未找到匹配的变量';
+            }
+        }
+
+        // 重置搜索
+        function resetSearch() {
+            document.getElementById('searchInput').value = '';
+            document.getElementById('searchResults').style.display = 'none';
+            resetToOriginal();
+        }
+
+        // 点击节点时高亮其血缘链
+        network.on("click", function(params) {
+            if (params.nodes.length > 0) {
+                var nodeId = params.nodes[0];
+                var nodeName = nodeIdToName[nodeId];
+                highlightLineage(nodeName);
+            }
+        });
+
+        // 双击空白处重置
+        network.on("doubleClick", function(params) {
+            if (params.nodes.length === 0) {
+                resetToOriginal();
+            }
+        });
+
+        // 暴露函数到全局
+        window.searchNode = searchNode;
+        window.resetSearch = resetSearch;
+        window.resetToOriginal = resetToOriginal;
+    </script>
+</body>
+</html>
