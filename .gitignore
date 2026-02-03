@@ -10,3 +10,9 @@ nul
 *.pkl
 *.rar
 __MACOSX/
+
+# Claude Code
+.claude/
+
+# IDE
+.idea/
