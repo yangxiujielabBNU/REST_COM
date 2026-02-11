@@ -32,6 +32,14 @@ SUBJECT_INFO = {
     '127': '127 REST.vhdr',
     '133': '133 REST.vhdr',
 }
+SUBJECT_INFO = {
+
+    '080': '080 REST.vhdr',
+
+    '100': '125 rest.vhdr',  # 特殊情况：目录名和文件名不一致
+
+}
+
 
 # 组别前缀
 GROUP_PREFIX = 'std_'  # 正常被试前缀
