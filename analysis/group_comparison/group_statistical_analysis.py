@@ -1,12 +1,15 @@
 # %% [markdown]
-# # 组间统计分析 - com vs std
+# # 组间统计分析 - ADHD vs COM vs TD (三组比较)
 #
-# 对共患组 (com) 和正常组 (std) 进行 EEG 指标的组间统计比较分析。
+# 对 ADHD 单纯组 (adhd)、ADHD 共患阅读困难组 (com)、正常发展组 (td) 进行 EEG 指标的组间统计比较。
+#
+# **统计思路:** 被试水平分析 (每位被试贡献一个数据点)
 #
 # **分析内容:**
-# - 连接性指标: 聚类系数、路径长度、小世界系数、平均连接强度
+# - 连接性指标: 聚类系数、路径长度、小世界系数、平均连接强度 (按频段)
 # - 频域指标: 各频段功率 (Delta, Theta, Alpha, Beta, Gamma)
-# - 统计检验: 自动选择 (正态性检验后决定 t检验/Mann-Whitney U)
+# - Omnibus 检验: ANOVA / Welch's ANOVA / Kruskal-Wallis
+# - 事后检验: Tukey HSD / Games-Howell / Dunn
 # - 多重比较校正: FDR (Benjamini-Hochberg)
 
 # %% [markdown]
@@ -16,20 +19,21 @@
 import os
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
+from itertools import combinations
 import warnings
 
 import numpy as np
 import pandas as pd
-import pickle
 from scipy import stats
 from statsmodels.stats.multitest import multipletests
+import scikit_posthocs as sp
 import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime
 
 warnings.filterwarnings('ignore')
 
-# 设置中文字体
+# 中文字体
 plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'Arial Unicode MS']
 plt.rcParams['axes.unicode_minus'] = False
 
@@ -37,538 +41,639 @@ print("库导入完成")
 
 # %%
 # =============================================================================
-# 路径配置
+# 配置
 # =============================================================================
 BASE_PATH = Path(r'd:\LYW\REST_COM')
 
-# 连接性分析结果路径
-CONN_COM_PATH = BASE_PATH / 'analysis' / 'connectivity_analysis' / 'com' / 'results'
-CONN_STD_PATH = BASE_PATH / 'analysis' / 'connectivity_analysis' / 'std' / 'results'
+GROUPS = ['adhd', 'com', 'td']
+GROUP_LABELS = {
+    'adhd': 'ADHD单纯组',
+    'com': 'ADHD共患阅读困难组',
+    'td': '正常发展组',
+}
+GROUP_COLORS = {
+    'adhd': '#E74C3C',
+    'com': '#F39C12',
+    'td': '#3498DB',
+}
+GROUP_PAIRS = [('adhd', 'com'), ('adhd', 'td'), ('com', 'td')]
 
-# 频域分析结果路径
-FREQ_COM_PATH = BASE_PATH / 'analysis' / '频域分析' / 'com' / 'results' / 'group'
-FREQ_STD_PATH = BASE_PATH / 'analysis' / '频域分析' / 'std' / 'results'
+FREQ_BANDS = ['Delta', 'Theta', 'Alpha', 'Beta', 'Gamma']
+
+# 数据路径
+CONN_PATHS = {g: BASE_PATH / 'analysis' / 'connectivity_analysis' / g / 'results' for g in GROUPS}
+FREQ_PATHS = {g: BASE_PATH / 'analysis' / '频域分析' / g / 'results' for g in GROUPS}
 
 # 输出路径
 OUTPUT_PATH = BASE_PATH / 'reports' / 'comparison'
 FIGURES_PATH = OUTPUT_PATH / 'figures'
-
-# 创建输出目录
 OUTPUT_PATH.mkdir(parents=True, exist_ok=True)
 FIGURES_PATH.mkdir(parents=True, exist_ok=True)
 
 print(f"输出目录: {OUTPUT_PATH}")
 
 # %% [markdown]
-# ## 2. 数据加载与整合
+# ## 2. 数据加载
 
 # %%
 def load_connectivity_data() -> pd.DataFrame:
-    """加载并整合两组连接性分析数据"""
+    """加载三组连接性数据"""
+    dfs = []
+    for g in GROUPS:
+        path = CONN_PATHS[g] / 'small_world_metrics.csv'
+        if not path.exists():
+            print(f"⚠ 缺少 {g} 组连接性数据: {path}")
+            continue
+        df = pd.read_csv(path)
+        df['group'] = g
+        df['subject_id'] = df['subject_id'].astype(str)
+        dfs.append(df)
+        print(f"  {g}: {df['subject_id'].nunique()} 被试, {len(df)} 行")
 
-    # 加载 com 组
-    com_df = pd.read_csv(CONN_COM_PATH / 'small_world_metrics.csv')
-    com_df['group'] = 'com'
-    # 添加前缀到 subject_id (先转为字符串)
-    com_df['subject_id'] = com_df['subject_id'].astype(str)
-    if not com_df['subject_id'].str.startswith('com_').any():
-        com_df['subject_id'] = 'com_' + com_df['subject_id']
+    conn_df = pd.concat(dfs, ignore_index=True)
+    print(f"\n连接性数据合并: {conn_df['subject_id'].nunique()} 被试, {len(conn_df)} 行")
+    return conn_df
 
-    # 加载 std 组
-    std_df = pd.read_csv(CONN_STD_PATH / 'small_world_metrics.csv')
-    if 'group' not in std_df.columns:
-        std_df['group'] = 'std'
 
-    # 合并
-    combined_df = pd.concat([com_df, std_df], ignore_index=True)
-
-    print(f"连接性数据加载完成:")
-    print(f"  com 组: {com_df['subject_id'].nunique()} 被试, {len(com_df)} 条记录")
-    print(f"  std 组: {std_df['subject_id'].nunique()} 被试, {len(std_df)} 条记录")
-
-    return combined_df
-
-# 加载连接性数据
-conn_df = load_connectivity_data()
-print(f"\n数据预览:")
-print(conn_df.head())
-
-# %%
 def load_frequency_data() -> pd.DataFrame:
-    """加载并整合两组频域分析数据"""
+    """加载三组被试级频段功率数据"""
+    dfs = []
+    for g in GROUPS:
+        path = FREQ_PATHS[g] / 'subject_band_powers.csv'
+        if not path.exists():
+            print(f"⚠ 缺少 {g} 组频域数据: {path}")
+            print(f"  请先运行 frequency_analysis_group.ipynb (GROUP_NAME='{g}')")
+            continue
+        df = pd.read_csv(path)
+        df['group'] = g
+        dfs.append(df)
+        print(f"  {g}: {len(df)} 被试")
 
-    freq_data = []
-
-    # 加载 com 组
-    com_pkl_path = FREQ_COM_PATH / 'group_frequency_results.pkl'
-    if com_pkl_path.exists():
-        with open(com_pkl_path, 'rb') as f:
-            com_results = pickle.load(f)
-
-        # 提取频段功率数据
-        if 'band_powers_group' in com_results:
-            band_powers = com_results['band_powers_group']
-            if isinstance(band_powers, dict) and 'mean' in band_powers:
-                band_powers = band_powers['mean']
-
-            # 获取被试信息
-            n_subjects = com_results.get('n_subjects', 12)
-
-            for band_name, powers in band_powers.items():
-                # powers 是通道平均功率，取全脑平均
-                mean_power = np.mean(powers) if isinstance(powers, np.ndarray) else powers
-                freq_data.append({
-                    'group': 'com',
-                    'freq_band': band_name,
-                    'mean_power': mean_power
-                })
-        print(f"  com 组频域数据加载成功")
-    else:
-        print(f"  com 组频域数据文件不存在: {com_pkl_path}")
-
-    # 加载 std 组
-    std_pkl_path = FREQ_STD_PATH / 'group_frequency_results.pkl'
-    if std_pkl_path.exists():
-        with open(std_pkl_path, 'rb') as f:
-            std_results = pickle.load(f)
-
-        if 'band_powers_group' in std_results:
-            band_powers = std_results['band_powers_group']
-            if isinstance(band_powers, dict) and 'mean' in band_powers:
-                band_powers = band_powers['mean']
-
-            for band_name, powers in band_powers.items():
-                mean_power = np.mean(powers) if isinstance(powers, np.ndarray) else powers
-                freq_data.append({
-                    'group': 'std',
-                    'freq_band': band_name,
-                    'mean_power': mean_power
-                })
-        print(f"  std 组频域数据加载成功")
-    else:
-        print(f"  std 组频域数据文件不存在: {std_pkl_path}")
-
-    if freq_data:
-        return pd.DataFrame(freq_data)
-    else:
+    if not dfs:
+        print("❌ 无频域数据可加载")
         return pd.DataFrame()
 
-# 加载频域数据
-print("\n频域数据加载:")
+    freq_df = pd.concat(dfs, ignore_index=True)
+    print(f"\n频域数据合并: {len(freq_df)} 被试")
+    return freq_df
+
+
+print("加载连接性数据:")
+conn_df = load_connectivity_data()
+
+print("\n加载频域数据:")
 freq_df = load_frequency_data()
-if not freq_df.empty:
-    print(f"\n频域数据预览:")
-    print(freq_df)
 
 # %% [markdown]
 # ## 3. 描述性统计
 
 # %%
-def compute_descriptive_stats(df: pd.DataFrame, metrics: List[str]) -> pd.DataFrame:
-    """计算描述性统计"""
-
-    stats_list = []
-
+def compute_descriptive_stats(df: pd.DataFrame, metrics: List[str], group_col: str = 'group') -> pd.DataFrame:
+    """按组计算描述性统计"""
+    rows = []
     for metric in metrics:
-        for band in df['freq_band'].unique():
-            band_data = df[df['freq_band'] == band]
+        for g in GROUPS:
+            data = df[df[group_col] == g][metric].dropna()
+            rows.append({
+                'metric': metric,
+                'group': g,
+                'n': len(data),
+                'mean': data.mean(),
+                'std': data.std(),
+                'median': data.median(),
+                'q25': data.quantile(0.25),
+                'q75': data.quantile(0.75),
+            })
+    return pd.DataFrame(rows)
 
-            for group in ['com', 'std']:
-                group_data = band_data[band_data['group'] == group][metric]
 
-                stats_list.append({
-                    'metric': metric,
-                    'freq_band': band,
-                    'group': group,
-                    'n': len(group_data),
-                    'mean': group_data.mean(),
-                    'std': group_data.std(),
-                    'median': group_data.median(),
-                    'min': group_data.min(),
-                    'max': group_data.max()
-                })
-
-    return pd.DataFrame(stats_list)
-
-# 连接性指标描述性统计
+# 连接性指标描述性统计 (按频段)
 conn_metrics = ['clustering', 'path_length', 'sigma', 'avg_connectivity']
-conn_desc_stats = compute_descriptive_stats(conn_df, conn_metrics)
+conn_desc_list = []
+for band in conn_df['freq_band'].unique():
+    band_df = conn_df[conn_df['freq_band'] == band]
+    desc = compute_descriptive_stats(band_df, conn_metrics)
+    desc['freq_band'] = band
+    conn_desc_list.append(desc)
+conn_desc_stats = pd.concat(conn_desc_list, ignore_index=True)
 
 print("连接性指标描述性统计:")
-print(conn_desc_stats.pivot_table(
-    index=['metric', 'freq_band'],
-    columns='group',
-    values=['mean', 'std']
-).round(4))
+display(conn_desc_stats.head(15))
+
+# 频域指标描述性统计
+if not freq_df.empty:
+    freq_desc_stats = compute_descriptive_stats(freq_df, FREQ_BANDS)
+    print("\n频域指标描述性统计:")
+    display(freq_desc_stats)
 
 # %% [markdown]
 # ## 4. 统计检验
 
 # %%
-def cohens_d(group1: np.ndarray, group2: np.ndarray) -> float:
-    """计算 Cohen's d 效应量"""
-    n1, n2 = len(group1), len(group2)
-    var1, var2 = group1.var(), group2.var()
+def check_normality(groups_data: List[np.ndarray], alpha: float = 0.05) -> Tuple[bool, List[float]]:
+    """Shapiro-Wilk 正态性检验 (每组)"""
+    p_values = []
+    for data in groups_data:
+        if len(data) < 3:
+            p_values.append(0.0)  # 样本太小，视为非正态
+        else:
+            _, p = stats.shapiro(data)
+            p_values.append(p)
+    all_normal = all(p > alpha for p in p_values)
+    return all_normal, p_values
 
-    # 池化标准差
-    pooled_std = np.sqrt(((n1 - 1) * var1 + (n2 - 1) * var2) / (n1 + n2 - 2))
 
-    if pooled_std == 0:
+def check_homogeneity(groups_data: List[np.ndarray], alpha: float = 0.05) -> Tuple[bool, float]:
+    """Levene 方差齐性检验"""
+    if any(len(d) < 2 for d in groups_data):
+        return False, 0.0
+    _, p = stats.levene(*groups_data)
+    return p > alpha, p
+
+
+def compute_eta_squared(groups_data: List[np.ndarray]) -> float:
+    """计算 η² (ANOVA 效应量)"""
+    all_data = np.concatenate(groups_data)
+    grand_mean = all_data.mean()
+    ss_between = sum(len(g) * (g.mean() - grand_mean) ** 2 for g in groups_data)
+    ss_total = np.sum((all_data - grand_mean) ** 2)
+    return ss_between / ss_total if ss_total > 0 else 0.0
+
+
+def compute_epsilon_squared(H: float, n: int, k: int) -> float:
+    """计算 ε² (Kruskal-Wallis 效应量)"""
+    return (H - k + 1) / (n - k) if (n - k) > 0 else 0.0
+
+
+def compute_cohens_d(g1: np.ndarray, g2: np.ndarray) -> float:
+    """计算 Cohen's d"""
+    n1, n2 = len(g1), len(g2)
+    if n1 < 2 or n2 < 2:
         return 0.0
+    pooled_std = np.sqrt(((n1 - 1) * g1.std(ddof=1)**2 + (n2 - 1) * g2.std(ddof=1)**2) / (n1 + n2 - 2))
+    return (g1.mean() - g2.mean()) / pooled_std if pooled_std > 0 else 0.0
 
-    return (group1.mean() - group2.mean()) / pooled_std
 
+def run_omnibus_test(groups_data: List[np.ndarray]) -> Dict:
+    """运行 omnibus 检验 (自动选择参数/非参数)"""
+    is_normal, norm_ps = check_normality(groups_data)
+    is_homogeneous, levene_p = check_homogeneity(groups_data)
+    n_total = sum(len(g) for g in groups_data)
+    k = len(groups_data)
 
-def run_group_comparison(
-    df: pd.DataFrame,
-    metric: str,
-    freq_band: str
-) -> Dict:
-    """对单个指标进行组间比较"""
-
-    band_data = df[df['freq_band'] == freq_band]
-    com_data = band_data[band_data['group'] == 'com'][metric].values
-    std_data = band_data[band_data['group'] == 'std'][metric].values
-
-    # 正态性检验
-    _, p_norm_com = stats.shapiro(com_data) if len(com_data) >= 3 else (0, 0)
-    _, p_norm_std = stats.shapiro(std_data) if len(std_data) >= 3 else (0, 0)
-
-    is_normal = (p_norm_com > 0.05) and (p_norm_std > 0.05)
-
-    # 选择检验方法
-    if is_normal:
-        test_name = 't-test'
-        statistic, p_value = stats.ttest_ind(com_data, std_data)
-    else:
-        test_name = 'Mann-Whitney U'
-        statistic, p_value = stats.mannwhitneyu(com_data, std_data, alternative='two-sided')
-
-    # 效应量
-    d = cohens_d(com_data, std_data)
-
-    return {
-        'metric': metric,
-        'freq_band': freq_band,
-        'com_mean': com_data.mean(),
-        'com_std': com_data.std(),
-        'std_mean': std_data.mean(),
-        'std_std': std_data.std(),
-        'test': test_name,
-        'statistic': statistic,
-        'p_value': p_value,
-        'cohens_d': d,
-        'is_normal': is_normal
+    result = {
+        'is_normal': is_normal,
+        'normality_ps': norm_ps,
+        'is_homogeneous': is_homogeneous,
+        'levene_p': levene_p,
     }
 
+    if is_normal:
+        if is_homogeneous:
+            # 标准 ANOVA
+            stat, p = stats.f_oneway(*groups_data)
+            result.update({
+                'test': 'ANOVA',
+                'statistic': stat,
+                'p_value': p,
+                'effect_size': compute_eta_squared(groups_data),
+                'effect_size_name': 'η²',
+            })
+        else:
+            # Welch's ANOVA (Alexander-Govern)
+            try:
+                res = stats.alexandergovern(*groups_data)
+                stat, p = res.statistic, res.pvalue
+            except Exception:
+                stat, p = stats.f_oneway(*groups_data)
+            result.update({
+                'test': "Welch's ANOVA",
+                'statistic': stat,
+                'p_value': p,
+                'effect_size': compute_eta_squared(groups_data),
+                'effect_size_name': 'η²',
+            })
+    else:
+        # Kruskal-Wallis
+        stat, p = stats.kruskal(*groups_data)
+        result.update({
+            'test': 'Kruskal-Wallis',
+            'statistic': stat,
+            'p_value': p,
+            'effect_size': compute_epsilon_squared(stat, n_total, k),
+            'effect_size_name': 'ε²',
+        })
 
-def run_all_comparisons(df: pd.DataFrame, metrics: List[str]) -> pd.DataFrame:
-    """运行所有组间比较"""
+    return result
 
-    results = []
-    freq_bands = df['freq_band'].unique()
 
-    for metric in metrics:
-        for band in freq_bands:
-            result = run_group_comparison(df, metric, band)
-            results.append(result)
+def run_posthoc_tests(groups_data: List[np.ndarray], group_names: List[str],
+                      is_normal: bool, is_homogeneous: bool) -> pd.DataFrame:
+    """运行事后两两比较"""
+    rows = []
+    pairs = list(combinations(range(len(group_names)), 2))
 
-    results_df = pd.DataFrame(results)
+    if is_normal:
+        # 构建 DataFrame 用于 posthoc
+        all_vals = np.concatenate(groups_data)
+        all_groups = np.concatenate([[group_names[i]] * len(groups_data[i]) for i in range(len(groups_data))])
+        posthoc_df = pd.DataFrame({'value': all_vals, 'group': all_groups})
 
-    # FDR 校正
-    _, p_corrected, _, _ = multipletests(results_df['p_value'], method='fdr_bh')
-    results_df['p_fdr'] = p_corrected
-    results_df['significant'] = results_df['p_fdr'] < 0.05
+        if is_homogeneous:
+            # Tukey HSD
+            try:
+                from statsmodels.stats.multicomp import pairwise_tukeyhsd
+                tukey = pairwise_tukeyhsd(posthoc_df['value'], posthoc_df['group'], alpha=0.05)
+                for i, (g1_idx, g2_idx) in enumerate(pairs):
+                    g1, g2 = group_names[g1_idx], group_names[g2_idx]
+                    # 从 tukey 结果中找到对应的行
+                    for row_idx in range(len(tukey.summary().data) - 1):
+                        row_data = tukey.summary().data[row_idx + 1]
+                        if (str(row_data[0]) == g1 and str(row_data[1]) == g2) or \
+                           (str(row_data[0]) == g2 and str(row_data[1]) == g1):
+                            rows.append({
+                                'group1': g1, 'group2': g2,
+                                'test': 'Tukey HSD',
+                                'p_value': float(row_data[3]),
+                                'cohens_d': compute_cohens_d(groups_data[g1_idx], groups_data[g2_idx]),
+                            })
+                            break
+                    else:
+                        # fallback
+                        _, p = stats.ttest_ind(groups_data[g1_idx], groups_data[g2_idx])
+                        rows.append({
+                            'group1': g1, 'group2': g2,
+                            'test': 't-test (Bonferroni)',
+                            'p_value': min(p * len(pairs), 1.0),
+                            'cohens_d': compute_cohens_d(groups_data[g1_idx], groups_data[g2_idx]),
+                        })
+            except Exception:
+                # fallback: Bonferroni-corrected t-tests
+                for g1_idx, g2_idx in pairs:
+                    _, p = stats.ttest_ind(groups_data[g1_idx], groups_data[g2_idx])
+                    rows.append({
+                        'group1': group_names[g1_idx], 'group2': group_names[g2_idx],
+                        'test': 't-test (Bonferroni)',
+                        'p_value': min(p * len(pairs), 1.0),
+                        'cohens_d': compute_cohens_d(groups_data[g1_idx], groups_data[g2_idx]),
+                    })
+        else:
+            # Games-Howell (via scikit_posthocs)
+            try:
+                ph = sp.posthoc_gameshowell(posthoc_df, val_col='value', group_col='group')
+                for g1_idx, g2_idx in pairs:
+                    g1, g2 = group_names[g1_idx], group_names[g2_idx]
+                    rows.append({
+                        'group1': g1, 'group2': g2,
+                        'test': 'Games-Howell',
+                        'p_value': ph.loc[g1, g2],
+                        'cohens_d': compute_cohens_d(groups_data[g1_idx], groups_data[g2_idx]),
+                    })
+            except Exception:
+                for g1_idx, g2_idx in pairs:
+                    _, p = stats.ttest_ind(groups_data[g1_idx], groups_data[g2_idx], equal_var=False)
+                    rows.append({
+                        'group1': group_names[g1_idx], 'group2': group_names[g2_idx],
+                        'test': "Welch t-test (Bonferroni)",
+                        'p_value': min(p * len(pairs), 1.0),
+                        'cohens_d': compute_cohens_d(groups_data[g1_idx], groups_data[g2_idx]),
+                    })
+    else:
+        # Dunn's test
+        all_vals = np.concatenate(groups_data)
+        all_groups = np.concatenate([[group_names[i]] * len(groups_data[i]) for i in range(len(groups_data))])
+        posthoc_df = pd.DataFrame({'value': all_vals, 'group': all_groups})
 
-    return results_df
+        try:
+            ph = sp.posthoc_dunn(posthoc_df, val_col='value', group_col='group', p_adjust='bonferroni')
+            for g1_idx, g2_idx in pairs:
+                g1, g2 = group_names[g1_idx], group_names[g2_idx]
+                rows.append({
+                    'group1': g1, 'group2': g2,
+                    'test': 'Dunn (Bonferroni)',
+                    'p_value': ph.loc[g1, g2],
+                    'cohens_d': compute_cohens_d(groups_data[g1_idx], groups_data[g2_idx]),
+                })
+        except Exception:
+            for g1_idx, g2_idx in pairs:
+                _, p = stats.mannwhitneyu(groups_data[g1_idx], groups_data[g2_idx], alternative='two-sided')
+                rows.append({
+                    'group1': group_names[g1_idx], 'group2': group_names[g2_idx],
+                    'test': 'Mann-Whitney U (Bonferroni)',
+                    'p_value': min(p * len(pairs), 1.0),
+                    'cohens_d': compute_cohens_d(groups_data[g1_idx], groups_data[g2_idx]),
+                })
 
-# 运行连接性指标组间比较
-print("运行连接性指标组间比较...")
-conn_stats = run_all_comparisons(conn_df, conn_metrics)
+    return pd.DataFrame(rows)
 
-print("\n连接性指标统计检验结果:")
-print(conn_stats[['metric', 'freq_band', 'com_mean', 'std_mean', 'test', 'p_value', 'p_fdr', 'cohens_d', 'significant']].round(4))
 
-# 保存结果
-conn_stats.to_csv(OUTPUT_PATH / 'connectivity_stats.csv', index=False)
-print(f"\n✓ 保存: {OUTPUT_PATH / 'connectivity_stats.csv'}")
+print("统计函数定义完成")
+
+# %% [markdown]
+# ## 4.2 执行统计检验
+
+# %%
+# --- 连接性指标检验 ---
+print("=" * 60)
+print("连接性指标 Omnibus 检验")
+print("=" * 60)
+
+conn_omnibus_results = []
+conn_posthoc_results = []
+
+for band in conn_df['freq_band'].unique():
+    band_data = conn_df[conn_df['freq_band'] == band]
+    for metric in conn_metrics:
+        result = run_omnibus_test(band_data, metric)
+        result['freq_band'] = band
+        conn_omnibus_results.append(result)
+
+conn_omnibus_df = pd.DataFrame(conn_omnibus_results)
+
+# FDR 校正
+if len(conn_omnibus_df) > 0:
+    _, conn_omnibus_df['p_fdr'], _, _ = multipletests(
+        conn_omnibus_df['p_value'], method='fdr_bh'
+    )
+    conn_omnibus_df['significant'] = conn_omnibus_df['p_fdr'] < 0.05
+
+print(f"\n连接性 Omnibus 结果: {conn_omnibus_df['significant'].sum()}/{len(conn_omnibus_df)} 显著")
+display(conn_omnibus_df[['metric', 'freq_band', 'test', 'statistic', 'p_value', 'p_fdr', 'effect_size', 'significant']])
+
+# 事后检验 (仅对 omnibus 显著的指标)
+sig_conn = conn_omnibus_df[conn_omnibus_df['significant']]
+for _, row in sig_conn.iterrows():
+    band_data = conn_df[conn_df['freq_band'] == row['freq_band']]
+    posthoc = run_posthoc_tests(band_data, row['metric'], row['is_parametric'], row['equal_var'])
+    posthoc['metric'] = row['metric']
+    posthoc['freq_band'] = row['freq_band']
+    conn_posthoc_results.append(posthoc)
+
+if conn_posthoc_results:
+    conn_posthoc_df = pd.concat(conn_posthoc_results, ignore_index=True)
+    print(f"\n连接性事后检验 ({len(conn_posthoc_df)} 对比较):")
+    display(conn_posthoc_df)
+else:
+    conn_posthoc_df = pd.DataFrame()
+    print("\n无显著 omnibus 结果，跳过事后检验")
+
+# %%
+# --- 频域指标检验 ---
+print("=" * 60)
+print("频域指标 Omnibus 检验")
+print("=" * 60)
+
+freq_omnibus_results = []
+freq_posthoc_results = []
+
+if not freq_df.empty:
+    for band in FREQ_BANDS:
+        result = run_omnibus_test(freq_df, band)
+        result['freq_band'] = band
+        freq_omnibus_results.append(result)
+
+    freq_omnibus_df = pd.DataFrame(freq_omnibus_results)
+
+    if len(freq_omnibus_df) > 0:
+        _, freq_omnibus_df['p_fdr'], _, _ = multipletests(
+            freq_omnibus_df['p_value'], method='fdr_bh'
+        )
+        freq_omnibus_df['significant'] = freq_omnibus_df['p_fdr'] < 0.05
+
+    print(f"\n频域 Omnibus 结果: {freq_omnibus_df['significant'].sum()}/{len(freq_omnibus_df)} 显著")
+    display(freq_omnibus_df[['metric', 'freq_band', 'test', 'statistic', 'p_value', 'p_fdr', 'effect_size', 'significant']])
+
+    # 事后检验
+    sig_freq = freq_omnibus_df[freq_omnibus_df['significant']]
+    for _, row in sig_freq.iterrows():
+        posthoc = run_posthoc_tests(freq_df, row['metric'], row['is_parametric'], row['equal_var'])
+        posthoc['metric'] = row['metric']
+        posthoc['freq_band'] = row['freq_band']
+        freq_posthoc_results.append(posthoc)
+
+    if freq_posthoc_results:
+        freq_posthoc_df = pd.concat(freq_posthoc_results, ignore_index=True)
+        print(f"\n频域事后检验 ({len(freq_posthoc_df)} 对比较):")
+        display(freq_posthoc_df)
+    else:
+        freq_posthoc_df = pd.DataFrame()
+        print("\n无显著 omnibus 结果，跳过事后检验")
+else:
+    freq_omnibus_df = pd.DataFrame()
+    freq_posthoc_df = pd.DataFrame()
+    print("⚠ 无频域数据，跳过频域检验")
+
+# %%
+# 保存统计结果
+conn_omnibus_df.to_csv(OUTPUT_PATH / 'connectivity_omnibus_stats.csv', index=False)
+print(f"✓ 已保存: connectivity_omnibus_stats.csv")
+
+if not conn_posthoc_df.empty:
+    conn_posthoc_df.to_csv(OUTPUT_PATH / 'connectivity_posthoc_stats.csv', index=False)
+    print(f"✓ 已保存: connectivity_posthoc_stats.csv")
+
+if not freq_omnibus_df.empty:
+    freq_omnibus_df.to_csv(OUTPUT_PATH / 'frequency_omnibus_stats.csv', index=False)
+    print(f"✓ 已保存: frequency_omnibus_stats.csv")
+
+if not freq_posthoc_df.empty:
+    freq_posthoc_df.to_csv(OUTPUT_PATH / 'frequency_posthoc_stats.csv', index=False)
+    print(f"✓ 已保存: frequency_posthoc_stats.csv")
 
 # %% [markdown]
 # ## 5. 可视化
 
 # %%
-def plot_connectivity_boxplot(df: pd.DataFrame, stats_df: pd.DataFrame):
-    """绘制连接性指标组间箱线图"""
-
-    metrics = ['clustering', 'path_length', 'sigma', 'avg_connectivity']
-    metric_labels = {
-        'clustering': 'Clustering Coefficient',
-        'path_length': 'Path Length',
-        'sigma': 'Small-world σ',
-        'avg_connectivity': 'Avg Connectivity (PLI)'
-    }
-
-    # 计算每组被试数
-    n_com = df[df['group'] == 'com']['subject_id'].nunique()
-    n_std = df[df['group'] == 'std']['subject_id'].nunique()
-
-    fig, axes = plt.subplots(2, 2, figsize=(14, 12))
-    axes = axes.flatten()
-
-    freq_order = ['delta', 'theta', 'alpha', 'beta', 'gamma']
+def plot_group_boxplots(df: pd.DataFrame, metrics: List[str], title_prefix: str,
+                        filename: str, freq_band: str = None):
+    """三组箱线图"""
+    n_metrics = len(metrics)
+    fig, axes = plt.subplots(1, n_metrics, figsize=(5 * n_metrics, 5))
+    if n_metrics == 1:
+        axes = [axes]
 
     for ax, metric in zip(axes, metrics):
-        # 绘制箱线图
-        sns.boxplot(
-            data=df, x='freq_band', y=metric, hue='group',
-            order=freq_order, palette={'com': '#E74C3C', 'std': '#3498DB'},
-            ax=ax
-        )
+        data_to_plot = []
+        labels = []
+        for g in GROUPS:
+            vals = df[df['group'] == g][metric].dropna()
+            data_to_plot.append(vals)
+            labels.append(f"{GROUP_LABELS[g]}\n(n={len(vals)})")
 
-        ax.set_title(metric_labels[metric], fontsize=12, fontweight='bold')
-        ax.set_xlabel('Frequency Band')
-        ax.set_ylabel(metric_labels[metric])
-        ax.legend(title='Group', loc='upper right',
-                  labels=[f'com (n={n_com})', f'std (n={n_std})'])
+        bp = ax.boxplot(data_to_plot, labels=labels, patch_artist=True, widths=0.6)
+        for patch, g in zip(bp['boxes'], GROUPS):
+            patch.set_facecolor(GROUP_COLORS[g])
+            patch.set_alpha(0.7)
 
-        # 添加显著性标记
-        for i, band in enumerate(freq_order):
-            row = stats_df[(stats_df['metric'] == metric) & (stats_df['freq_band'] == band)]
-            if not row.empty and row['significant'].values[0]:
-                # 获取 y 位置
-                y_max = df[df['freq_band'] == band][metric].max()
-                ax.annotate('*', xy=(i, y_max * 1.05), ha='center', fontsize=14, color='red')
+        ax.set_title(metric, fontsize=12)
+        ax.tick_params(axis='x', labelsize=9)
 
-    # 添加总标题，包含样本信息
-    fig.suptitle(f'Group Comparison: com (n={n_com}) vs std (n={n_std})\n* = FDR < 0.05',
-                 fontsize=14, fontweight='bold', y=1.02)
-
+    band_str = f" ({freq_band})" if freq_band else ""
+    fig.suptitle(f"{title_prefix}{band_str}", fontsize=14, fontweight='bold')
     plt.tight_layout()
-    fig.savefig(FIGURES_PATH / 'connectivity_boxplot.png', dpi=150, bbox_inches='tight')
+    plt.savefig(FIGURES_PATH / filename, dpi=150, bbox_inches='tight')
     plt.show()
-    print(f"✓ 保存: {FIGURES_PATH / 'connectivity_boxplot.png'}")
+    print(f"✓ 已保存: {filename}")
 
-# 绘制连接性箱线图
-plot_connectivity_boxplot(conn_df, conn_stats)
+
+# 连接性指标箱线图 (按频段)
+for band in conn_df['freq_band'].unique():
+    band_data = conn_df[conn_df['freq_band'] == band]
+    plot_group_boxplots(
+        band_data, conn_metrics,
+        title_prefix="连接性指标组间比较",
+        filename=f"conn_boxplot_{band}.png",
+        freq_band=band
+    )
+
+# 频域指标箱线图
+if not freq_df.empty:
+    plot_group_boxplots(
+        freq_df, FREQ_BANDS,
+        title_prefix="频段功率组间比较",
+        filename="freq_boxplot_band_powers.png"
+    )
 
 # %%
-def plot_effect_size(stats_df: pd.DataFrame, n_com: int, n_std: int):
-    """绘制效应量森林图"""
+def plot_omnibus_heatmap(omnibus_df: pd.DataFrame, title: str, filename: str):
+    """Omnibus p 值热图"""
+    if omnibus_df.empty:
+        return
 
-    fig, ax = plt.subplots(figsize=(12, 10))
+    pivot = omnibus_df.pivot_table(index='metric', columns='freq_band', values='p_fdr')
+    fig, ax = plt.subplots(figsize=(8, max(3, len(pivot) * 0.8)))
 
-    # 准备数据
-    stats_df = stats_df.copy()
-    stats_df['label'] = stats_df['freq_band'] + ' - ' + stats_df['metric']
-    stats_df = stats_df.sort_values(['metric', 'freq_band'])
+    sns.heatmap(pivot, annot=True, fmt='.3f', cmap='RdYlGn_r',
+                vmin=0, vmax=0.1, ax=ax, linewidths=0.5,
+                cbar_kws={'label': 'FDR-corrected p'})
 
-    y_pos = range(len(stats_df))
-    colors = ['#E74C3C' if sig else '#95A5A6' for sig in stats_df['significant']]
+    ax.set_title(title, fontsize=13, fontweight='bold')
+    ax.set_xlabel('频段')
+    ax.set_ylabel('指标')
+    plt.tight_layout()
+    plt.savefig(FIGURES_PATH / filename, dpi=150, bbox_inches='tight')
+    plt.show()
+    print(f"✓ 已保存: {filename}")
 
-    # 绘制效应量
-    ax.barh(y_pos, stats_df['cohens_d'], color=colors, alpha=0.7)
-    ax.axvline(x=0, color='black', linestyle='-', linewidth=0.5)
-    ax.axvline(x=0.2, color='gray', linestyle='--', linewidth=0.5, label='Small (0.2)')
-    ax.axvline(x=-0.2, color='gray', linestyle='--', linewidth=0.5)
-    ax.axvline(x=0.5, color='gray', linestyle=':', linewidth=0.5, label='Medium (0.5)')
-    ax.axvline(x=-0.5, color='gray', linestyle=':', linewidth=0.5)
-    ax.axvline(x=0.8, color='gray', linestyle='-.', linewidth=0.5, label='Large (0.8)')
-    ax.axvline(x=-0.8, color='gray', linestyle='-.', linewidth=0.5)
 
+plot_omnibus_heatmap(conn_omnibus_df, "连接性指标 Omnibus p 值 (FDR)", "conn_omnibus_heatmap.png")
+plot_omnibus_heatmap(freq_omnibus_df, "频域指标 Omnibus p 值 (FDR)", "freq_omnibus_heatmap.png")
+
+# %%
+def plot_posthoc_effect_sizes(posthoc_df: pd.DataFrame, title: str, filename: str):
+    """事后检验效应量 (Cohen's d) 森林图"""
+    if posthoc_df.empty:
+        return
+
+    posthoc_df = posthoc_df.copy()
+    posthoc_df['comparison'] = posthoc_df['group1'] + ' vs ' + posthoc_df['group2']
+    posthoc_df['label'] = posthoc_df['metric'] + ' (' + posthoc_df.get('freq_band', '') + ')'
+
+    fig, ax = plt.subplots(figsize=(10, max(3, len(posthoc_df) * 0.4)))
+
+    y_pos = range(len(posthoc_df))
+    colors = ['#E74C3C' if p < 0.05 else '#95A5A6' for p in posthoc_df['p_value']]
+
+    ax.barh(y_pos, posthoc_df['cohens_d'], color=colors, alpha=0.7, height=0.6)
     ax.set_yticks(y_pos)
-    ax.set_yticklabels(stats_df['label'])
-    ax.set_xlabel("Cohen's d (com - std)")
-    ax.set_title(f"Effect Size Forest Plot\ncom (n={n_com}) vs std (n={n_std})\n(Red = FDR < 0.05, Gray = Not significant)",
-                 fontsize=12, fontweight='bold')
-    ax.legend(loc='lower right')
+    ax.set_yticklabels([f"{r['label']}\n{r['comparison']}" for _, r in posthoc_df.iterrows()], fontsize=8)
+    ax.set_xlabel("Cohen's d")
+    ax.set_title(title, fontsize=13, fontweight='bold')
+
+    # 效应量参考线
+    for val, label in [(0.2, '小'), (0.5, '中'), (0.8, '大')]:
+        ax.axvline(val, color='gray', linestyle='--', alpha=0.5)
+        ax.axvline(-val, color='gray', linestyle='--', alpha=0.5)
 
     plt.tight_layout()
-    fig.savefig(FIGURES_PATH / 'effect_size_forest.png', dpi=150, bbox_inches='tight')
+    plt.savefig(FIGURES_PATH / filename, dpi=150, bbox_inches='tight')
     plt.show()
-    print(f"✓ 保存: {FIGURES_PATH / 'effect_size_forest.png'}")
+    print(f"✓ 已保存: {filename}")
 
-# 计算被试数用于图表
-n_com = conn_df[conn_df['group'] == 'com']['subject_id'].nunique()
-n_std = conn_df[conn_df['group'] == 'std']['subject_id'].nunique()
 
-# 绘制效应量图
-plot_effect_size(conn_stats, n_com, n_std)
-
-# %%
-def plot_significance_heatmap(stats_df: pd.DataFrame, n_com: int, n_std: int):
-    """绘制显著性热图"""
-
-    # 创建 p 值矩阵
-    metrics = ['clustering', 'path_length', 'sigma', 'avg_connectivity']
-    freq_bands = ['delta', 'theta', 'alpha', 'beta', 'gamma']
-
-    p_matrix = np.zeros((len(metrics), len(freq_bands)))
-    d_matrix = np.zeros((len(metrics), len(freq_bands)))
-
-    for i, metric in enumerate(metrics):
-        for j, band in enumerate(freq_bands):
-            row = stats_df[(stats_df['metric'] == metric) & (stats_df['freq_band'] == band)]
-            if not row.empty:
-                p_matrix[i, j] = -np.log10(row['p_fdr'].values[0] + 1e-10)
-                d_matrix[i, j] = row['cohens_d'].values[0]
-
-    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-
-    # P 值热图
-    sns.heatmap(
-        p_matrix, ax=axes[0],
-        xticklabels=freq_bands, yticklabels=metrics,
-        cmap='Reds', annot=True, fmt='.2f',
-        cbar_kws={'label': '-log10(p_FDR)'}
-    )
-    axes[0].set_title(f'Significance Heatmap\ncom (n={n_com}) vs std (n={n_std})\n(-log10 p-value, higher = more significant)')
-    axes[0].axhline(y=0, color='black', linewidth=0.5)
-
-    # 效应量热图
-    sns.heatmap(
-        d_matrix, ax=axes[1],
-        xticklabels=freq_bands, yticklabels=metrics,
-        cmap='RdBu_r', center=0, annot=True, fmt='.2f',
-        cbar_kws={'label': "Cohen's d"}
-    )
-    axes[1].set_title(f"Effect Size Heatmap\ncom (n={n_com}) vs std (n={n_std})\n(Cohen's d: com - std)")
-
-    plt.tight_layout()
-    fig.savefig(FIGURES_PATH / 'significance_heatmap.png', dpi=150, bbox_inches='tight')
-    plt.show()
-    print(f"✓ 保存: {FIGURES_PATH / 'significance_heatmap.png'}")
-
-# 绘制显著性热图
-plot_significance_heatmap(conn_stats, n_com, n_std)
+plot_posthoc_effect_sizes(conn_posthoc_df, "连接性事后检验效应量", "conn_posthoc_effects.png")
+plot_posthoc_effect_sizes(freq_posthoc_df, "频域事后检验效应量", "freq_posthoc_effects.png")
 
 # %% [markdown]
 # ## 6. 生成报告
 
 # %%
-def generate_report(conn_stats: pd.DataFrame, conn_desc: pd.DataFrame, n_com: int, n_std: int) -> str:
-    """生成 Markdown 报告"""
+def format_omnibus_table(omnibus_df: pd.DataFrame) -> str:
+    """格式化 omnibus 结果为 markdown 表格"""
+    if omnibus_df.empty:
+        return "无数据\n"
+    lines = ["| 指标 | 频段 | 检验方法 | 统计量 | p值 | p(FDR) | 效应量 | 显著 |",
+             "|------|------|----------|--------|-----|--------|--------|------|"]
+    for _, r in omnibus_df.iterrows():
+        sig = "✓" if r.get('significant', False) else ""
+        lines.append(f"| {r['metric']} | {r['freq_band']} | {r['test']} | "
+                     f"{r['statistic']:.3f} | {r['p_value']:.4f} | {r['p_fdr']:.4f} | "
+                     f"{r['effect_size']:.3f} | {sig} |")
+    return "\n".join(lines) + "\n"
 
-    date_str = datetime.now().strftime('%Y-%m-%d %H:%M')
 
-    # 统计显著结果
-    sig_results = conn_stats[conn_stats['significant']]
-    n_sig = len(sig_results)
-    n_total = len(conn_stats)
+def format_posthoc_table(posthoc_df: pd.DataFrame) -> str:
+    """格式化事后检验结果为 markdown 表格"""
+    if posthoc_df.empty:
+        return "无显著 omnibus 结果，未执行事后检验\n"
+    lines = ["| 指标 | 频段 | 比较 | 检验方法 | p值 | Cohen's d |",
+             "|------|------|------|----------|-----|-----------|"]
+    for _, r in posthoc_df.iterrows():
+        d_str = f"{r['cohens_d']:.3f}" if pd.notna(r['cohens_d']) else "-"
+        lines.append(f"| {r['metric']} | {r.get('freq_band', '-')} | "
+                     f"{r['group1']} vs {r['group2']} | {r['test']} | "
+                     f"{r['p_value']:.4f} | {d_str} |")
+    return "\n".join(lines) + "\n"
 
-    report = f"""# 组间统计分析报告 - com vs std
 
-**生成时间**: {date_str}
+# 样本量
+n_per_group = {g: conn_df[conn_df['group'] == g]['subject_id'].nunique() for g in GROUPS}
 
----
+report = f"""# 组间统计分析报告 - ADHD vs COM vs TD
 
-## 1. 分析概况
+**生成时间**: {datetime.now().strftime('%Y-%m-%d %H:%M')}
 
-| 项目 | 值 |
-|------|-----|
-| 共患组 (com) 被试数 | {n_com} |
-| 正常组 (std) 被试数 | {n_std} |
-| 总样本量 | {n_com + n_std} |
-| 分析指标数 | 4 (连接性) |
-| 频段数 | 5 |
-| 总比较数 | {n_total} |
-| 显著结果数 (FDR < 0.05) | {n_sig} |
+## 研究设计
 
----
+- **分析水平**: 被试水平 (每位被试贡献一个数据点)
+- **组别**: {', '.join(f'{GROUP_LABELS[g]} ({g}, n={n_per_group.get(g, "?")})' for g in GROUPS)}
+- **总被试数**: {sum(n_per_group.values())}
 
-## 2. 统计方法
+## 统计方法
 
-- **正态性检验**: Shapiro-Wilk 检验
-- **组间比较**:
-  - 正态分布 → 独立样本 t 检验
-  - 非正态分布 → Mann-Whitney U 检验
+- **Omnibus 检验**: 正态+方差齐 → ANOVA; 正态+方差不齐 → Welch's ANOVA; 非正态 → Kruskal-Wallis
+- **事后检验** (仅 omnibus 显著时): 参数 → Tukey HSD / Games-Howell; 非参数 → Dunn (Bonferroni)
 - **多重比较校正**: FDR (Benjamini-Hochberg)
-- **效应量**: Cohen's d
+- **效应量**: Omnibus η²/ε²; 事后 Cohen's d
 
----
+## 连接性指标结果
 
-## 3. 连接性指标结果
+### Omnibus 检验
 
-### 3.1 描述性统计
+{format_omnibus_table(conn_omnibus_df)}
 
-| 指标 | 频段 | com (n={n_com}, M±SD) | std (n={n_std}, M±SD) |
-|------|------|------------|------------|
-"""
+### 事后检验
 
-    for _, row in conn_stats.iterrows():
-        com_str = f"{row['com_mean']:.4f}±{row['com_std']:.4f}"
-        std_str = f"{row['std_mean']:.4f}±{row['std_std']:.4f}"
-        report += f"| {row['metric']} | {row['freq_band']} | {com_str} | {std_str} |\n"
+{format_posthoc_table(conn_posthoc_df)}
 
-    report += f"""
-### 3.2 统计检验结果
+## 频域指标结果
 
-| 指标 | 频段 | 检验方法 | p值 | p_FDR | Cohen's d | 显著 |
-|------|------|----------|-----|-------|-----------|------|
-"""
+### Omnibus 检验
 
-    for _, row in conn_stats.iterrows():
-        sig_mark = "✓" if row['significant'] else ""
-        report += f"| {row['metric']} | {row['freq_band']} | {row['test']} | {row['p_value']:.4f} | {row['p_fdr']:.4f} | {row['cohens_d']:.3f} | {sig_mark} |\n"
+{format_omnibus_table(freq_omnibus_df)}
 
-    report += f"""
-### 3.3 显著性结果汇总
+### 事后检验
 
-"""
-
-    if n_sig > 0:
-        report += "以下指标在组间存在显著差异 (FDR < 0.05):\n\n"
-        for _, row in sig_results.iterrows():
-            direction = "com > std" if row['cohens_d'] > 0 else "com < std"
-            report += f"- **{row['metric']} ({row['freq_band']})**: {direction}, d = {row['cohens_d']:.3f}\n"
-    else:
-        report += "未发现显著的组间差异 (FDR < 0.05)\n"
-
-    report += f"""
----
-
-## 4. 可视化
-
-### 4.1 连接性指标箱线图
-![Connectivity Boxplot](figures/connectivity_boxplot.png)
-
-### 4.2 效应量森林图
-![Effect Size](figures/effect_size_forest.png)
-
-### 4.3 显著性热图
-![Significance Heatmap](figures/significance_heatmap.png)
-
----
-
-## 5. 效应量解读
-
-| Cohen's d | 解读 |
-|-----------|------|
-| |d| < 0.2 | 微小效应 |
-| 0.2 ≤ |d| < 0.5 | 小效应 |
-| 0.5 ≤ |d| < 0.8 | 中等效应 |
-| |d| ≥ 0.8 | 大效应 |
-
----
-
-## 6. 结论
-
-{f"本分析发现 {n_sig} 个指标在共患组和正常组之间存在显著差异。" if n_sig > 0 else "本分析未发现共患组和正常组之间存在显著差异。"}
+{format_posthoc_table(freq_posthoc_df)}
 
 ---
 
 *报告由 REST EEG Pipeline 自动生成*
 """
 
-    return report
-
-# 生成报告
-report = generate_report(conn_stats, conn_desc_stats, n_com, n_std)
-
-# 保存报告
 report_file = OUTPUT_PATH / 'group_comparison_report.md'
 with open(report_file, 'w', encoding='utf-8') as f:
     f.write(report)
-
 print(f"✓ 报告已保存: {report_file}")
 
 # %% [markdown]
@@ -576,20 +681,27 @@ print(f"✓ 报告已保存: {report_file}")
 
 # %%
 print("\n" + "=" * 60)
-print("组间统计分析完成!")
+print("三组统计分析完成!")
 print("=" * 60)
 
 print(f"\n输出文件:")
-for f in OUTPUT_PATH.glob('*'):
+for f in sorted(OUTPUT_PATH.glob('*')):
     if f.is_file():
         print(f"  - {f.name}")
 
 print(f"\n可视化文件:")
-for f in FIGURES_PATH.glob('*.png'):
+for f in sorted(FIGURES_PATH.glob('*.png')):
     print(f"  - {f.name}")
 
-# 显示显著结果摘要
-sig_results = conn_stats[conn_stats['significant']]
-print(f"\n显著结果 (FDR < 0.05): {len(sig_results)}/{len(conn_stats)}")
-if len(sig_results) > 0:
-    print(sig_results[['metric', 'freq_band', 'p_fdr', 'cohens_d']].to_string(index=False))
+# 显著结果摘要
+if not conn_omnibus_df.empty:
+    sig = conn_omnibus_df[conn_omnibus_df['significant']]
+    print(f"\n连接性显著结果 (FDR < 0.05): {len(sig)}/{len(conn_omnibus_df)}")
+    if len(sig) > 0:
+        print(sig[['metric', 'freq_band', 'p_fdr', 'effect_size']].to_string(index=False))
+
+if not freq_omnibus_df.empty:
+    sig = freq_omnibus_df[freq_omnibus_df['significant']]
+    print(f"\n频域显著结果 (FDR < 0.05): {len(sig)}/{len(freq_omnibus_df)}")
+    if len(sig) > 0:
+        print(sig[['metric', 'freq_band', 'p_fdr', 'effect_size']].to_string(index=False))
