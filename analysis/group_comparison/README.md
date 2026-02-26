@@ -53,10 +53,7 @@ epoch_3 ─┘
 
 ## 运行
 
-```bash
-python group_statistical_analysis.py
-# 或在 VS Code / Jupyter 中以交互模式逐 cell 运行
-```
+在 VS Code / Jupyter 中打开 `group_statistical_analysis.ipynb`，逐 cell 运行。
 
 ## 前置依赖
 
