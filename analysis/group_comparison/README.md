@@ -8,7 +8,7 @@
 |------|------|
 | `stats_utils.py` | 共享统计模块 (配置、检验、可视化、报告生成) |
 | `nbs_utils.py` | NBS 核心函数模块 (独立样本置换检验) |
-| `connectivity_stats.ipynb` | 连接性分析: 全脑 (20检验) + ROI (45检验), 合计 65 检验统一 FDR |
+| `graph_roi_stats.ipynb` | 图论指标 + ROI 连接性: 全脑 (20检验) + ROI (45检验), 合计 65 检验统一 FDR |
 | `nbs_stats.ipynb` | NBS 连接性分析: 3 组对 × 5 频段 = 15 次置换检验 |
 | `frequency_stats.ipynb` | 频域功率分析: 5 频段, 5 检验独立 FDR |
 
@@ -30,8 +30,8 @@ epoch_3 ─┘
 
 | Notebook | 指标类型 | 具体指标 | 检验数 |
 |----------|----------|----------|--------|
-| `connectivity_stats.ipynb` | 全脑连接性 | 聚类系数、路径长度、σ、平均连接强度 × 5频段 | 20 |
-| `connectivity_stats.ipynb` | ROI 连接性 (wPLI) | Paper ROIs (prefrontal, left_pot, between) + Exploratory ROIs (6区域) × 5频段 | 45 |
+| `graph_roi_stats.ipynb` | 全脑图论指标 | 聚类系数、路径长度、σ、平均连接强度 × 5频段 | 20 |
+| `graph_roi_stats.ipynb` | ROI 连接性 (wPLI) | Paper ROIs (prefrontal, left_pot, between) + Exploratory ROIs (6区域) × 5频段 | 45 |
 | `nbs_stats.ipynb` | NBS 边级别连接性 | wPLI 矩阵边级别置换检验, 3 组对 × 5 频段 | 15 |
 | `frequency_stats.ipynb` | 频域功率 | Delta, Theta, Alpha, Beta, Gamma | 5 |
 
@@ -70,7 +70,7 @@ epoch_3 ─┘
 
 | Notebook | 输出目录 |
 |----------|----------|
-| `connectivity_stats.ipynb` | `reports/comparison/connectivity/` |
+| `graph_roi_stats.ipynb` | `reports/comparison/connectivity/` |
 | `nbs_stats.ipynb` | `reports/comparison/nbs/` |
 | `frequency_stats.ipynb` | `reports/comparison/frequency/` |
 
@@ -85,7 +85,7 @@ epoch_3 ─┘
 
 在 Jupyter 中分别运行两个 notebook (工作目录需为 `analysis/group_comparison/`):
 
-1. `connectivity_stats.ipynb` — 连接性分析 (图论指标)
+1. `graph_roi_stats.ipynb` — 图论指标 + ROI 连接性
 2. `nbs_stats.ipynb` — NBS 连接性分析 (边级别置换检验)
 3. `frequency_stats.ipynb` — 频域分析
 
