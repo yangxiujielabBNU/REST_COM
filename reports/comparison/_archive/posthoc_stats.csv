@@ -1,0 +1,4 @@
+﻿metric,freq_band,pair,pair_label,test,p,cohens_d,significant
+within_posterior_R,theta,adhd vs com,ADHD单纯组 vs ADHD共患阅读困难组,Tukey HSD,0.9242986718081576,-0.14410862726559903,False
+within_posterior_R,theta,adhd vs td,ADHD单纯组 vs 正常发展组,Tukey HSD,0.05761684064772876,1.2018171701287639,False
+within_posterior_R,theta,com vs td,ADHD共患阅读困难组 vs 正常发展组,Tukey HSD,0.02286415297920319,1.198830480249902,True
