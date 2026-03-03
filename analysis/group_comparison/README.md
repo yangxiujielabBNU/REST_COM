@@ -95,3 +95,64 @@ epoch_3 ─┘
 
 1. **频域分析** (`analysis/频域分析/frequency_analysis_group.ipynb`) — 三组分别运行，生成 `subject_band_powers.csv`
 2. **连接性分析** (`analysis/connectivity_analysis/rest_connectivity.ipynb`) — 三组分别运行，生成 `small_world_metrics.csv` 和 `connectivity_results.npz`
+
+## 下一阶段计划
+
+### 混合效应模型分析 (年龄协变量控制)
+
+当前分析采用被试水平的方差分析/非参数检验，未考虑年龄等协变量的影响。下一阶段将引入**线性混合效应模型 (Linear Mixed-Effects Models, LMM)** 进行更精细的统计建模：
+
+#### 分析目标
+
+1. **控制年龄协变量**: 在组间比较中控制年龄的线性/非线性效应
+2. **提升统计效力**: 利用 LMM 对个体差异的建模能力，减少残差方差
+3. **灵活建模**: 支持固定效应 (组别、年龄) 和随机效应 (被试个体差异)
+
+#### 模型设计
+
+**基础模型**:
+
+```r
+Y ~ Group + Age + (1|Subject)
+```
+
+- `Y`: 因变量 (图论指标、ROI 连接性、频域功率)
+- `Group`: 固定效应 (adhd/com/td)
+- `Age`: 协变量 (连续变量)
+- `(1|Subject)`: 随机截距 (被试个体差异)
+
+**扩展模型** (如需要):
+
+```r
+Y ~ Group * Age + (1|Subject)  # 组别与年龄交互作用
+Y ~ Group + Age + Age² + (1|Subject)  # 年龄非线性效应
+```
+
+#### 实施步骤
+
+1. **数据准备**: 合并三组数据，添加年龄变量 (需从被试信息表获取)
+2. **模型拟合**: 使用 `statsmodels.MixedLM` 或 `R lme4::lmer`
+3. **模型比较**: AIC/BIC 选择最优模型 (是否需要交互项/非线性项)
+4. **假设检验**:
+   - 组间差异: Wald χ² 检验 (控制年龄后)
+   - 事后比较: 估计边际均值 (Estimated Marginal Means, EMM) + 对比
+5. **效应量**: 报告标准化回归系数 (β) 和偏 η²
+6. **诊断**: 残差正态性、同方差性、多重共线性检查
+
+#### 预期输出
+
+- `lmm_results.csv` — 模型参数估计、显著性检验
+- `lmm_posthoc.csv` — 控制年龄后的组间两两比较
+- `lmm_diagnostics/` — 残差诊断图、模型拟合图
+- `lmm_report.md` — 完整分析报告
+
+#### 工具选择
+
+- **Python**: `statsmodels.MixedLM` (推荐，与现有流程集成)
+- **R**: `lme4::lmer` + `emmeans` (更成熟的 LMM 生态)
+
+#### 注意事项
+
+- 年龄数据需从被试信息表提取并合并到分析数据中
+- 检查年龄分布是否在三组间平衡 (如不平衡，LMM 的协变量控制尤为重要)
+- 对于 NBS 边级别分析，LMM 可能计算量较大，需评估可行性
