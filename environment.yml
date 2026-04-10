@@ -1,0 +1,52 @@
+name: rest_eeg
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  # Python version compatible with MNE 1.10
+  - python=3.11
+
+  # Core scientific computing
+  - numpy>=1.21,<2.0
+  - scipy>=1.7
+  - pandas>=1.3
+
+  # EEG/Neuroscience analysis
+  - mne=1.10
+  - pip
+
+  # Visualization
+  - matplotlib>=3.5
+  - seaborn>=0.11
+
+  # Statistical analysis
+  - statsmodels>=0.13
+
+  # Machine learning
+  - scikit-learn>=1.0
+
+  # Network analysis
+  - networkx>=2.6
+
+  # Jupyter
+  - jupyter
+  - notebook
+  - ipykernel
+  - ipywidgets
+
+  # Utilities
+  - joblib
+  - tqdm
+
+  # Neuroimaging (via conda-forge)
+  - nilearn
+
+  # Pip-only packages
+  - pip:
+    - mne-connectivity>=0.5
+    - autoreject>=0.4
+    - scikit-posthocs>=0.7
+    - neurora>=1.1
+    - dipy>=1.5
+    - pyvista>=0.38
+    - opencv-python>=4.5
